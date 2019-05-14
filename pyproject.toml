@@ -1,0 +1,19 @@
+[build-system]
+requires = ["pytoml>=0.1", "import_scons", "enscons"]
+build-backend = "enscons.api"
+
+[tool.enscons]
+name="aiosni"
+version="0.0.1"
+packages=["aiosni"]
+install_requires=[]
+description="asyncio tls+sni server"
+description_file="README.rst"
+license="MIT"
+classifiers=[
+  "Programming Language :: Python :: 3.7",
+]
+keywords=["asyncio", "letsencrypt", "sni"]
+author="Daniel Holth"
+author_email="dholth@gmail.com"
+url="https://bitbucket.org/dholth/aiosni"
