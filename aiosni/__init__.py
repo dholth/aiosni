@@ -3,6 +3,7 @@
 SNI + acme-tls/1 responder
 """
 
+import sys
 import ssl
 import pathlib
 
@@ -56,10 +57,12 @@ def sni_callback(sslobject: SSLObject, hostname, sslcontext):
     """
     if hostname:
         sslobject.context = context_for_servername(hostname, sslobject._probably_acme)
+    # TODO return error code on exception
 
 
-acme_dir = pathlib.Path("./certificates/acme").resolve()
-certs_dir = pathlib.Path("./certificates").resolve()
+basedir = pathlib.Path(sys.argv[1]).expanduser()
+acme_dir = basedir / "alpn-certs"
+certs_dir = basedir / "certs"
 
 
 def context_for_servername(hostname, acme=False):
@@ -69,12 +72,18 @@ def context_for_servername(hostname, acme=False):
     print("load cert for", hostname)
     context = create_context()
     if acme:
-        certPath = acme_dir / (f"{hostname}.crt")
-        keyPath = acme_dir / (f"{hostname}.key")
-        context.load_cert_chain(certfile=certPath, keyfile=keyPath)
+        certPath = acme_dir / (hostname + ".crt.pem")
+        keyPath = acme_dir / (hostname + ".key.pem")
+        print("load acme", certPath, keyPath)
+        context.load_cert_chain(certPath, keyPath)
     else:
-        certPath = certs_dir / (f"{hostname}.pem")
-        context.load_cert_chain(certfile=certPath)
+        hostPath = certs_dir / hostname
+        certPath = hostPath / "fullchain.pem"
+        keyPath = hostPath / "privkey.pem"
+        print("load normal", certPath, keyPath)
+        context.load_cert_chain(certPath, keyPath)
+    # ALPN will be negotiated against the new context
+    context.set_alpn_protocols(["http/1.1", ACME_TLS_1.decode("ascii")])
     return context
 
 
@@ -93,22 +102,31 @@ ssl_context = create_context()
 ssl_context.set_alpn_protocols(["http/1.1", ACME_TLS_1.decode("ascii")])
 ssl_context.sni_callback = sni_callback
 # may work without any cert_chain when we set one in sni_callback:
-ssl_context.load_cert_chain(certfile=certs_dir / "DEFAULT.pem")
+if False:
+    ssl_context.load_cert_chain(
+        certfile=certs_dir / "DEFAULT" / "fullchain.pem",
+        keyfile=certs_dir / "DEFAULT" / "privkey.pem",
+    )
 
 
-loop = asyncio.get_event_loop()
-# Each client connection will create a new protocol instance
-coro: Server = loop.create_server(ByeProtocol, "::", 8444, ssl=ssl_context)
-server = loop.run_until_complete(coro)
+def go(protocol=ByeProtocol):
+    loop = asyncio.get_event_loop()
+    # Each client connection will create a new protocol instance
+    coro: Server = loop.create_server(protocol, "::", 443, ssl=ssl_context)
+    server = loop.run_until_complete(coro)
 
-# Serve requests until Ctrl+C is pressed
-print("Serving on {}".format(server.sockets[0].getsockname()))
-try:
-    loop.run_forever()
-except KeyboardInterrupt:
-    pass
+    # Serve requests until Ctrl+C is pressed
+    print("Serving on {}".format(server.sockets[0].getsockname()))
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
 
-# Close the server
-server.close()
-loop.run_until_complete(server.wait_closed())
-loop.close()
+    # Close the server
+    server.close()
+    loop.run_until_complete(server.wait_closed())
+    loop.close()
+
+
+if __name__ == "__main__":
+    go()
